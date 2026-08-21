@@ -36,7 +36,7 @@
 
 `dsh-plugin-auxiliary-runtime@0.1.0` is a community Host plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It binds cancelable, no-tools auxiliary model calls to an already-live Session, applies per-Session policy, and records usage in a dedicated ledger backed by the official `storageDomain` service.
 
-[Clarify](https://github.com/Hilbert-beinghappy/dsh-plugin-clarify) uses its same-process `run` service to generate contextual questions, options, and evolving Draft previews outside the main Session transcript. [SeekTTY](https://github.com/Hilbert-beinghappy/seektty) consumes the read-only snapshot and shows Official, Auxiliary, and Combined values in `/status` while the capability is healthy.
+[Clarify](https://github.com/Hilbert-beinghappy/dsh-plugin-clarify) uses Auxiliary Runtime's same-process `run` service to generate contextual questions, options, and evolving Draft previews outside the main Session transcript. [SeekTTY](https://github.com/Hilbert-beinghappy/seektty) consumes the read-only snapshot and shows Official, Auxiliary, and Combined values in `/status` while the capability is healthy.
 
 ```text
                        +----------------------+
@@ -126,7 +126,7 @@ For the complete clarification workflow, add SeekTTY and Clarify to the same Pro
 
 ```sh
 dsh plugin --profile tui add https://github.com/Hilbert-beinghappy/seektty/releases/download/v1.2.0/seektty-1.2.0.tgz
-dsh plugin --profile tui add https://github.com/Hilbert-beinghappy/dsh-plugin-clarify/releases/download/v0.2.0/dsh-plugin-clarify-0.2.0.tgz
+dsh plugin --profile tui add https://github.com/Hilbert-beinghappy/dsh-plugin-clarify/releases/download/v0.2.1/dsh-plugin-clarify-0.2.1.tgz
 dsh --profile tui
 ```
 
@@ -178,7 +178,9 @@ The published compatibility target is official DeepSeek Harness **`0.1.0-rc.8`**
 - `sessionProjections.snapshot` for read-only Official usage
 - Typert Host `register` for snapshot and cancel
 
-The complete verified combination is SeekTTY `1.2.0`, Clarify `0.2.0`, and Auxiliary Runtime `0.1.0` on exact rc.8. Joint acceptance covered native installation from all three public Release tarballs, boot, remove/reinstall, `/doctor` with 0 errors and 0 warnings, live model-generated clarification, multi-round Draft evolution, user-controlled submission, interruption recovery, usage provenance, and ledger privacy.
+The recommended installation combines SeekTTY `1.2.0`, Clarify `0.2.1`, and Auxiliary Runtime `0.1.0` on exact rc.8. Clarify `0.2.1` preserves the six-method Remote, `clarify.wire/1`, and compatibility boundary of `0.2.0`.
+
+Clarify `0.2.0` live-provider joint acceptance covered model-generated clarification, multi-round Draft evolution, user-controlled submission, interruption recovery, usage provenance, and ledger privacy. Clarify `0.2.1` post-release no-key acceptance re-downloaded and verified all three Release assets, passed stock add/boot/remove/re-add and `/doctor` with 0 errors, 0 warnings, and 99 plugins, then reached `running`, routed through Auxiliary, and returned the expected isolated-environment `MISSING_CREDENTIAL` result. Version `0.2.1` has not rerun live-provider multi-round acceptance or a cache/cost A/B; Clarify `0.2.0` remains an available rollback artifact.
 
 `package.json#dshPlugin.testedHost` records this project's tested target. Capability probing can boot when the Host exposes no version value and reports `hostConfirmed: false`; a known version outside rc.8 is rejected.
 

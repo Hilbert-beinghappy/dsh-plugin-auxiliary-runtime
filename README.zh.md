@@ -126,7 +126,7 @@ dsh plugin --profile tui add https://github.com/Hilbert-beinghappy/dsh-plugin-au
 
 ```sh
 dsh plugin --profile tui add https://github.com/Hilbert-beinghappy/seektty/releases/download/v1.2.0/seektty-1.2.0.tgz
-dsh plugin --profile tui add https://github.com/Hilbert-beinghappy/dsh-plugin-clarify/releases/download/v0.2.0/dsh-plugin-clarify-0.2.0.tgz
+dsh plugin --profile tui add https://github.com/Hilbert-beinghappy/dsh-plugin-clarify/releases/download/v0.2.1/dsh-plugin-clarify-0.2.1.tgz
 dsh --profile tui
 ```
 
@@ -178,7 +178,9 @@ prepared 回调在 `llm.prepareCall` 后接收已经分离、冻结的结构数�
 - `sessionProjections.snapshot`，只读 Official 用量
 - Typert Host `register`，仅注册 snapshot 与 cancel
 
-完整已验证组合是精确 rc.8 上的 SeekTTY `1.2.0`、Clarify `0.2.0` 和 Auxiliary Runtime `0.1.0`。联合验收覆盖三个公开 Release tarball 的原生安装、启动、移除重装、`/doctor` 0 错误／0 警告、真实模型动态澄清、多轮 Draft 演进、用户自主发送、中断恢复、用量来源和账本隐私。
+当前推荐安装组合是精确 rc.8 上的 SeekTTY `1.2.0`、Clarify `0.2.1` 和 Auxiliary Runtime `0.1.0`。Clarify `0.2.1` 保持 `0.2.0` 的六方法 Remote、`clarify.wire/1` 和兼容边界。
+
+Clarify `0.2.0` live-provider 联合验收覆盖真实模型动态澄清、多轮 Draft 演进、用户自主发送、中断恢复、用量来源和账本隐私。Clarify `0.2.1` 发布后无 Key 验收重新下载并核对三包 Release 资产，在 stock rc.8 Profile 完成 add／boot／remove／re-add，`/doctor` 为 0 错误／0 警告、99 个插件运行，随后进入 `running`、路由到 Auxiliary，并按隔离环境预期返回 `MISSING_CREDENTIAL`。`0.2.1` 尚未重跑 live-provider 动态多轮，也没有 cache／cost A/B；Clarify `0.2.0` 保留为已发布回滚工件。
 
 `package.json#dshPlugin.testedHost` 记录本项目的已测目标。Host 没有暴露版本值时，能力探测可以启动并报告 `hostConfirmed: false`；已知版本位于 rc.8 之外时会被拒绝。
 
