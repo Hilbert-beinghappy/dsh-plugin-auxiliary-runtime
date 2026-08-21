@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isForbiddenPackEntry } from './pack-policy.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -18,6 +19,10 @@ try {
   const tgz = join(dir, tarballName)
   const listing = execFileSync('tar', ['-tzf', tgz], { encoding: 'utf8' })
   const entries = listing.trim().split('\n').filter(Boolean)
+  const appleDouble = entries.filter((entry) => isForbiddenPackEntry(entry))
+  if (appleDouble.length > 0) {
+    throw new Error(`packed AppleDouble or Finder metadata:\n${appleDouble.join('\n')}`)
+  }
   const allowed = [
     /^package\/package\.json$/,
     /^package\/LICENSE$/,

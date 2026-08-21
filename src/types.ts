@@ -48,7 +48,7 @@ export interface PolicyRecord extends AuxiliaryPolicy {
   readonly updatedAt: number
 }
 
-/** Structural copies of the exact rc.8 seams consumed at runtime. */
+/** Structural copies of the legacy rc.8 / current 0.1.1-rc.2 seams consumed at runtime. */
 export interface LlmCallConfig {
   provider: string
   model: string

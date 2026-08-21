@@ -68,7 +68,7 @@ describe('plugin and Typert Host surface', () => {
 
     const snapshot = await processHost.snapshot('session-1')
     expect(snapshot.capability.singleProcess).toBe(true)
-    expect(snapshot.capability.pinnedHostRange).toEqual(['0.1.0-rc.8'])
+    expect(snapshot.capability.pinnedHostRange).toEqual(['0.1.0-rc.8', '0.1.1-rc.2'])
     expect(snapshot.capability.hostConfirmed).toBe(true)
 
     expect(disposer).toEqual(expect.any(Function))

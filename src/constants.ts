@@ -1,5 +1,5 @@
 export const PACKAGE_NAME = 'dsh-plugin-auxiliary-runtime'
-export const PACKAGE_VERSION = '0.1.0'
+export const PACKAGE_VERSION = '0.1.1'
 export const PLUGIN_ID = 'auxiliary-runtime'
 export const SERVICE_KEY = 'auxiliaryRuntime'
 export const REMOTE_NAMESPACE = 'auxiliary-runtime'
@@ -8,8 +8,9 @@ export const DOMAIN_VERSION = 0
 export const CALLS_TABLE = 'calls'
 export const POLICIES_TABLE = 'policies'
 
-export const PINNED_DSH_VERSION = '0.1.0-rc.8'
-export const PINNED_DSH_VERSIONS = [PINNED_DSH_VERSION] as const
+export const PINNED_DSH_VERSION_LEGACY_RC8 = '0.1.0-rc.8'
+export const PINNED_DSH_VERSION = '0.1.1-rc.2'
+export const PINNED_DSH_VERSIONS = [PINNED_DSH_VERSION_LEGACY_RC8, PINNED_DSH_VERSION] as const
 
 export const MAX_CALL_ROWS = 10_000
 export const MAX_OUTPUT_CHARS = 65_536
