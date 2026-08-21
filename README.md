@@ -1,25 +1,142 @@
-# dsh-plugin-auxiliary-runtime
+<div align="center">
 
-Community auxiliary-model runtime for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) `0.1.0-rc.8`.
+<h1>Auxiliary Runtime</h1>
 
-The plugin runs cancelable, no-tools auxiliary model calls against an already-live Session and records their usage in a dedicated ledger. Official Agent-loop usage stays in the Host `tokenUsage` projection. Consumers such as Clarify (same-process `run`) and SeekTTY (read-only snapshot) receive provenance-preserving `official`, `auxiliary`, and `combined` values.
+<p>Cancelable auxiliary model calls, durable limits, and provenance-preserving usage for DeepSeek Harness.</p>
 
-This package is **0.1.0**. Release assets are the tarball and `SHA256SUMS`; it is not published to npm.
+<p>
+  <a href="https://github.com/Hilbert-beinghappy/dsh-plugin-auxiliary-runtime/releases/tag/v0.1.0"><img src="https://img.shields.io/badge/Version-0.1.0-orange" alt="Version 0.1.0"></a>
+  <img src="https://img.shields.io/badge/DeepSeek%20Harness-0.1.0--rc.8-5B5BD6" alt="DeepSeek Harness 0.1.0-rc.8">
+  <img src="https://img.shields.io/badge/Usage-Official%20%7C%20Auxiliary%20%7C%20Combined-0A7EA4" alt="Official, Auxiliary, Combined usage">
+  <a href="https://github.com/Hilbert-beinghappy/dsh-plugin-auxiliary-runtime/actions/workflows/ci.yml"><img src="https://github.com/Hilbert-beinghappy/dsh-plugin-auxiliary-runtime/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow" alt="MIT License"></a>
+</p>
 
-## Ownership
+<p>
+  <a href="#project-overview">Project overview</a>
+  ·
+  <a href="#three-sourced-usage-views">Usage views</a>
+  ·
+  <a href="#runtime-design">Runtime design</a>
+  ·
+  <a href="#quick-start">Quick start</a>
+  ·
+  <a href="#service-contracts">Contracts</a>
+  ·
+  <a href="#compatibility-and-verification">Verification</a>
+</p>
 
-| Surface | Owner |
-|---|---|
-| Official `tokenUsage` | Agent-loop only. This plugin never registers, replaces, or writes that projection. |
-| Auxiliary ledger | This plugin, domain `auxiliary_runtime` version `0`. |
-| Combined usage | Derived bucket-by-bucket at read time. Never written back. |
-| Session transcript | Unchanged. No `append`, no hidden Session, no fabricated assistant events. |
+<p>English · <a href="README.zh.md">中文</a></p>
 
-Usage buckets are disjoint: `uncachedInputTokens`, `outputTokens`, `cacheReadTokens`, and `cacheWriteTokens`.
+</div>
 
-## Same-process service
+---
 
-`run` is same-process only. It is not a Typert Remote method and is never offered over HTTP.
+## Project overview
+
+`dsh-plugin-auxiliary-runtime@0.1.0` is a community Host plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It binds cancelable, no-tools auxiliary model calls to an already-live Session, applies per-Session policy, and records usage in a dedicated ledger backed by the official `storageDomain` service.
+
+[Clarify](https://github.com/Hilbert-beinghappy/dsh-plugin-clarify) uses its same-process `run` service to generate contextual questions, options, and evolving Draft previews outside the main Session transcript. [SeekTTY](https://github.com/Hilbert-beinghappy/seektty) consumes the read-only snapshot and shows Official, Auxiliary, and Combined values in `/status` while the capability is healthy.
+
+```text
+                       +----------------------+
+                       | DeepSeek Harness     |
+                       | live Session         |
+                       | official model route |
+                       +----------+-----------+
+                                  |
+                           llm.prepareCall
+                                  |
+                                  v
++----------------+       +----------------------+       +----------------+
+| Clarify        | ----> | Auxiliary Runtime    | ----> | Provider stream|
+| same-process   | run   | admission / cancel   |       | usage chunks   |
+| Draft preview  | <---- | bounded live output  | <---- | final status   |
++----------------+       +----------+-----------+       +----------------+
+                                  |
+                                  | durable rows
+                                  v
+                       +----------------------+
+                       | storageDomain        |
+                       | auxiliary_runtime v0 |
+                       | calls / policies     |
+                       +----------+-----------+
+                                  |
+                           read-only snapshot
+                                  v
+                       +----------------------+
+                       | SeekTTY /status      |
+                       | Official / Auxiliary |
+                       | Combined             |
+                       +----------------------+
+```
+
+## Three sourced usage views
+
+| View | Source and meaning |
+| --- | --- |
+| **Official** | The official Host `tokenUsage` projection, owned by the Agent loop. |
+| **Auxiliary** | This plugin's `auxiliary_runtime` ledger, aggregated from authoritative call rows. |
+| **Combined** | A read-time, bucket-by-bucket sum of Official and Auxiliary values. |
+
+The four disjoint buckets are `uncachedInputTokens`, `outputTokens`, `cacheReadTokens`, and `cacheWriteTokens`. Combined values are derived for consumers and stay outside the official projection.
+
+### Main Session transcript
+
+Auxiliary calls use the existing Session as an identity and routing fence. The main transcript receives formal messages through the normal Session flow, after the user submits an accepted Draft. Clarify questions, answers, and Draft previews remain in Clarify's temporary Host state.
+
+### Durable auxiliary ledger
+
+Durable rows contain identifiers, purpose, status, the four token buckets, `usageRecorded`, normalized failure `{ category, code }`, and timestamps. Prompts, messages, system text, model output, custom answers, credentials, environment values, and filesystem paths remain outside storage. Failure records contain only the normalized `{ category, code }`; the official `LlmFailure.message` stays outside storage.
+
+## Runtime design
+
+### Admission, usage, and replay
+
+`run` writes a durable `running` row before `llm.prepareCall` and `prepared.stream`. Prepared requests complete token-limit admission after provider metadata has been materialized and before streaming begins. The latest provider usage chunk replaces the four buckets on the authoritative row; `usageRecorded` distinguishes an observed all-zero report from a missing report. Recorded usage survives a later `error` or `aborted` finish.
+
+Successful live calls return model text ephemerally to the same-process caller, joined in stream order and bounded to 65,536 UTF-16 code units. Terminal replay returns the durable status and usage with `replayed: true` and `output: null`; a caller that needs new text uses a new `callId`. Active-id reuse, cross-Session reuse, and purpose changes are reported as conflicts.
+
+### Limits and cancellation
+
+Per-Session policy covers `maxConcurrentCalls`, `maxCallsPerSession`, and `maxAuxiliaryTotalTokens`. Limits combine recorded usage with process-local reservations for in-flight calls. Provider-reported usage becomes authoritative after dispatch, including values above the initial reservation.
+
+Cancellation composes the caller signal and service signal through `AbortController`. Provider failures preserve official categories such as `QUOTA` and `CONTEXT_WINDOW_EXCEEDED`. Durable `running` rows found during the next initialization become `interrupted` without additional usage.
+
+### Persistence and Session fencing
+
+The official storage domain is `auxiliary_runtime`, version `0`, with `calls` and `policies` tables. Call rows are authoritative; aggregates rebuild from rows during initialization and update after durable writes succeed.
+
+Records are fenced by Session id and `session.header.createdAt`, so a reused id starts with a new usage and policy identity. Uninstalling the Bundle leaves the official storage-domain file available for a later reinstall. Version `0` preserves its audit rows and refuses new calls at 10,000 rows. The supported deployment shape is one Host process per `DSH_HOME`.
+
+### Service lifecycle
+
+The plugin waits for official `storageDomain` through Cordis child-context injection. Service withdrawal cancels active work and disposes stale references; restoration creates a fresh runtime. Missing Host services, a missing live Session, a domain version mismatch, and invalid stored records fail closed before provider dispatch.
+
+## Quick start
+
+Install the prebuilt GitHub Release tarball into an isolated Profile with the native `dsh plugin` command:
+
+```sh
+pnpm add --global @deepseek-ai/dsh@0.1.0-rc.8
+dsh plugin --profile tui add https://github.com/Hilbert-beinghappy/dsh-plugin-auxiliary-runtime/releases/download/v0.1.0/dsh-plugin-auxiliary-runtime-0.1.0.tgz
+```
+
+For the complete clarification workflow, add SeekTTY and Clarify to the same Profile:
+
+```sh
+dsh plugin --profile tui add https://github.com/Hilbert-beinghappy/seektty/releases/download/v1.2.0/seektty-1.2.0.tgz
+dsh plugin --profile tui add https://github.com/Hilbert-beinghappy/dsh-plugin-clarify/releases/download/v0.2.0/dsh-plugin-clarify-0.2.0.tgz
+dsh --profile tui
+```
+
+The Bundle patch inserts `id: auxiliary-runtime` / `name: dsh-plugin-auxiliary-runtime`. The consumer package contains no `workspace:` dependency and uses the official Host Context for Harness services.
+
+## Service contracts
+
+### Same-process service
+
+`run` is available only to plugins in the same Host process:
 
 ```ts
 const runtime = ctx.get('auxiliaryRuntime')
@@ -36,84 +153,47 @@ const result = await runtime.run({
 
 `run` accepts exactly one request mode:
 
-- static `system`/`messages` plus a mandatory four-bucket `reservation`;
-- legacy same-process `buildRequest(preparedConfig)` plus a mandatory reservation; or
-- `prepareRequest({ config, context, adapterDefaults })`, which atomically returns `{ system?, messages, reservation }` from the same prepared metadata.
+- static `system` / `messages` with a mandatory four-bucket reservation;
+- legacy same-process `buildRequest(preparedConfig)` with a mandatory reservation; or
+- `prepareRequest({ config, context, adapterDefaults })`, atomically returning `{ system?, messages, reservation }` from the same prepared metadata.
 
-The prepared callbacks run only after `llm.prepareCall`. They receive detached, frozen structural data and never receive the prepared stream handle, signal, Host Context, credentials, or services. Callback functions and their products are never persisted, logged, or remoted. Callback failures are normalized to `REQUEST_BUILD_FAILED`; caller exception text and codes are not stored.
+Prepared callbacks receive detached, frozen structural data after `llm.prepareCall`. Callback functions and products remain process-local. `getPolicy(sessionId)` and `setPolicy(sessionId, policy)` manage the three per-Session limits.
 
-`run` writes a durable `running` row **before** `llm.prepareCall` / `prepared.stream`. The latest provider usage chunk replaces the four buckets on that one authoritative row; `usageRecorded` distinguishes an observed all-zero report from no report. Usage survives a later `error` or `aborted` finish.
+### Typert Host
 
-Live successful calls return model text ephemerally as `output: string` to the same-process caller. Text deltas are joined in stream order without trimming and bounded to 65,536 UTF-16 code units. The text is never written to storage, logs, Session state, or Typert; failed and cancelled calls return `output: null`. A terminal replay returns the durable status and usage with `replayed: true` and `output: null`, so a caller that lost the original live response must use a new `callId`. Reusing an active `callId`, a terminal id across Session fences, or an id for a different purpose is a conflict.
-
-Also same-process: `getPolicy(sessionId)` and `setPolicy(sessionId, policy)` for `maxConcurrentCalls`, `maxCallsPerSession`, and `maxAuxiliaryTotalTokens`. The same-process object is provided as `auxiliaryRuntime` and is not the Typert receiver.
-
-## Typert Host
-
-Typert receives a separate `auxiliary-runtime` object whose callable surface is only `snapshot` and `cancel`. Only two Host endpoints are registered:
+The separate `auxiliary-runtime` Typert receiver exposes two methods:
 
 - `auxiliary-runtime/snapshot` — read-only `{ official, auxiliary, combined, capability }`
 - `auxiliary-runtime/cancel` — abort an active call and report its stable state
 
-## Persistence and privacy
+Model execution remains a same-process capability; HTTP consumers receive usage snapshots and cancellation only.
 
-Durable state uses official `storageDomain`:
+## Compatibility and verification
 
-- domain `auxiliary_runtime`
-- version `0`
-- tables `calls` and `policies`
-
-Call rows are authoritative. There is no aggregate table. In-memory per-Session aggregates rebuild from rows on initialization and update only after durable writes succeed.
-
-Records are fenced by Session id **and** `session.header.createdAt`, so a reused Session id cannot inherit prior usage or policy.
-
-Durable rows contain only identifiers, purpose, status, token buckets, `usageRecorded`, normalized failure `{ category, code }`, and timestamps. They never contain prompts, messages, system text, model output, custom answers, credentials, environment values, or filesystem paths. Official `LlmFailure.message` is not stored.
-
-Uninstall leaves the official storage-domain file in place; reinstall resumes it. Version `0` has no wipe API. New calls are refused at **10 000** rows rather than deleting audit records.
-
-## Limits, cancellation, and recovery
-
-Limits are honest reservations over **recorded** auxiliary usage plus process-local reservations of in-flight calls. Static requests reserve during the first serialized admission. Prepared requests use two serialized admissions: durable call/concurrency admission before `llm.prepareCall`, then token-limit admission with the request and reservation derived atomically from prepared provider metadata, still before `prepared.stream`. After dispatch, provider-reported usage always wins, even when it exceeds the reservation.
-
-Cancellation composes the caller signal and the service signal through `AbortController`. Provider failures preserve official codes such as `QUOTA` and `CONTEXT_WINDOW_EXCEEDED`.
-
-Orphaned durable `running` rows become `interrupted` on the next initialization, without adding usage.
-
-Active calls, `callId` ownership, and reservations are process-local. Official `storageDomain` is a single-process medium: **one Host process per `DSH_HOME`**. This plugin does not claim multi-process safety.
-
-Missing required Host services, a missing live Session, a domain version mismatch, or an invalid stored record fail closed **before** provider dispatch. A known Host version outside rc.8 is rejected. When the Host exposes no version value, capability probing may allow the call but reports `hostConfirmed: false` and a compatibility warning; unknown is never presented as tested rc.8.
-
-The plugin waits for official `storageDomain` through Cordis child-context injection, so bundle order does not decide whether the service starts. Withdrawing the service removes `auxiliaryRuntime`, cancels active work, and permanently disposes stale service references; restoring it creates a fresh runtime.
-
-## Compatibility
-
-Tested against DeepSeek Harness **`0.1.0-rc.8`** public services:
+The published compatibility target is official DeepSeek Harness **`0.1.0-rc.8`** with Node `^22.19.0 || >=24`. Runtime integration uses these public Host services:
 
 - `storageDomain.open` / `KvTable`
 - `sessions.get` and `header.createdAt`
 - `llm.prepareCall` / `prepared.stream`
-- `sessionProjections.snapshot` (read-only)
-- Typert Host `register` for snapshot/cancel only
+- `sessionProjections.snapshot` for read-only Official usage
+- Typert Host `register` for snapshot and cancel
 
-Node `^22.19.0 || >=24`. Consumer-facing metadata has no `workspace:` dependencies.
-The published package has one runtime dependency, `zod`; official Harness packages are exact rc.8 development/type-contract fixtures, not consumer dependencies or peers. Runtime services come only from the loaded Host Context.
+The complete verified combination is SeekTTY `1.2.0`, Clarify `0.2.0`, and Auxiliary Runtime `0.1.0` on exact rc.8. Joint acceptance covered native installation from all three public Release tarballs, boot, remove/reinstall, `/doctor` with 0 errors and 0 warnings, live model-generated clarification, multi-round Draft evolution, user-controlled submission, interruption recovery, usage provenance, and ledger privacy.
 
-`package.json#dshPlugin.testedHost` records this project's test claim only. It is not an official Harness compatibility gate; runtime capability probing and the published install matrix are authoritative.
-
-## Install
-
-Install the packed tarball into an isolated Profile with unmodified official dsh. The bundle patch inserts only `id: auxiliary-runtime` / `name: dsh-plugin-auxiliary-runtime`.
-
-```bash
-dsh plugin --profile <profile> add ./dsh-plugin-auxiliary-runtime-0.1.0.tgz
-```
+`package.json#dshPlugin.testedHost` records this project's tested target. Capability probing can boot when the Host exposes no version value and reports `hostConfirmed: false`; a known version outside rc.8 is rejected.
 
 ## Development
 
-```bash
+```sh
 pnpm install
 pnpm test
 pnpm typecheck
 pnpm build
 pnpm pack:check
 ```
+
+Release assets contain the tarball and `SHA256SUMS`.
+
+## License
+
+[MIT](LICENSE)
