@@ -1,0 +1,5 @@
+# Official dsh.bundle.patch layer. Inserts only this plugin's row.
+# It does not replace in-box core rows.
+- insert:
+    - id: auxiliary-runtime
+      name: dsh-plugin-auxiliary-runtime
