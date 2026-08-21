@@ -19,7 +19,7 @@ Supported purposes are `clarify`, `compaction`, and `session-title`. Call states
 
 The same-process service provides:
 
-- `run(request)`: require a caller-generated `callId`, existing `sessionId`, purpose, official messages/system/config, a mandatory usage reservation, and optional caller signal; write `running` durably before provider dispatch.
+- `run(request)`: require a caller-generated `callId`, existing `sessionId`, purpose, official config, optional caller signal, and exactly one of static messages plus reservation, `buildRequest(preparedConfig)` plus reservation, or atomic `prepareRequest({ config, context, adapterDefaults }) => { system?, messages, reservation }`. Write `running` durably before `llm.prepareCall`; for prepared requests, perform a second serialized token-limit admission before `prepared.stream`. Prepared callbacks receive only detached structural metadata and are never persisted, logged, or remoted.
 - `cancel(callId)`: abort an active call and report its current stable state.
 - `snapshot(sessionId)`: return `{ official, auxiliary, combined, capability }` for the current Session lifecycle.
 - `getPolicy(sessionId)` and `setPolicy(sessionId, policy)`: read and durably replace auxiliary limit policy.
@@ -36,12 +36,13 @@ Records are fenced by Session id and `header.createdAt`, so a reused id cannot i
 
 One process owns a `callId` at a time. A retry with the same terminal record, Session fence, and purpose is idempotent; it replays durable status/usage but never model text. A conflicting reuse fails. A startup pass converts durable orphaned `running` rows to `interrupted` without adding usage.
 
-Preflight limits may reject on concurrent calls, recorded call count, or `recorded usage + mandatory reservation`. Provider-reported usage always wins after dispatch, even when it exceeds the reservation; the next call sees the resulting total. Provider quota and context-window failures preserve official `LlmFailure.code`; cancellation composes caller and service signals through `AbortController`.
+Preflight limits may reject on concurrent calls, recorded call count, or `recorded usage + held reservations + current reservation`. Static reservations are admitted with the durable running row. Prepared requests admit call/concurrency first, derive the request and reservation from prepared metadata, then admit tokens before stream construction. Provider-reported usage always wins after dispatch, even when it exceeds the reservation; the next call sees the resulting total. Provider quota and context-window failures preserve official `LlmFailure.code`; cancellation composes caller and service signals through `AbortController`.
 
 ## Required acceptance
 
 - No `tokenUsage` registration, Session append, hidden Session, core bundle-row override, transcript event, tool, MCP, Skill, or subagent path exists.
 - A missing Session or required Host service fails before provider dispatch.
+- Late `storageDomain` availability activates the runtime independent of bundle order; withdrawal deactivates it, and stale service references cannot restart a disposed runtime.
 - `running` is durable before stream construction; one authoritative row keeps the last provider usage report, including an observed all-zero report, and survives a later error/abort finish.
 - A live successful same-process call returns bounded ephemeral model text; failed/cancelled/replayed calls return no text, and no model text enters the durable domain or Typert.
 - Same-call retries, conflicting reuse, concurrent calls, cancel races, storage failures, invalid records, version mismatch, restart recovery, Session-id reuse, and row-limit behavior have executable tests.

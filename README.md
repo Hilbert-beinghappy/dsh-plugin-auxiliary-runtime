@@ -29,12 +29,18 @@ const result = await runtime.run({
   sessionId,       // already-live Session
   purpose,         // 'clarify' | 'compaction' | 'session-title'
   config,          // official LlmCallConfig
-  system,          // optional
-  messages,        // official messages
-  reservation,     // mandatory four-bucket reservation
+  prepareRequest,  // optional atomic prepared metadata => request + reservation
   signal,          // optional caller AbortSignal
 })
 ```
+
+`run` accepts exactly one request mode:
+
+- static `system`/`messages` plus a mandatory four-bucket `reservation`;
+- legacy same-process `buildRequest(preparedConfig)` plus a mandatory reservation; or
+- `prepareRequest({ config, context, adapterDefaults })`, which atomically returns `{ system?, messages, reservation }` from the same prepared metadata.
+
+The prepared callbacks run only after `llm.prepareCall`. They receive detached, frozen structural data and never receive the prepared stream handle, signal, Host Context, credentials, or services. Callback functions and their products are never persisted, logged, or remoted. Callback failures are normalized to `REQUEST_BUILD_FAILED`; caller exception text and codes are not stored.
 
 `run` writes a durable `running` row **before** `llm.prepareCall` / `prepared.stream`. The latest provider usage chunk replaces the four buckets on that one authoritative row; `usageRecorded` distinguishes an observed all-zero report from no report. Usage survives a later `error` or `aborted` finish.
 
@@ -67,7 +73,7 @@ Uninstall leaves the official storage-domain file in place; reinstall resumes it
 
 ## Limits, cancellation, and recovery
 
-Limits are honest reservations over **recorded** auxiliary usage plus process-local reservations of in-flight calls. The plugin does not claim the provider's final usage is knowable before dispatch. After dispatch, provider-reported usage always wins, even when it exceeds the reservation.
+Limits are honest reservations over **recorded** auxiliary usage plus process-local reservations of in-flight calls. Static requests reserve during the first serialized admission. Prepared requests use two serialized admissions: durable call/concurrency admission before `llm.prepareCall`, then token-limit admission with the request and reservation derived atomically from prepared provider metadata, still before `prepared.stream`. After dispatch, provider-reported usage always wins, even when it exceeds the reservation.
 
 Cancellation composes the caller signal and the service signal through `AbortController`. Provider failures preserve official codes such as `QUOTA` and `CONTEXT_WINDOW_EXCEEDED`.
 
@@ -76,6 +82,8 @@ Orphaned durable `running` rows become `interrupted` on the next initialization,
 Active calls, `callId` ownership, and reservations are process-local. Official `storageDomain` is a single-process medium: **one Host process per `DSH_HOME`**. This plugin does not claim multi-process safety.
 
 Missing required Host services, a missing live Session, a domain version mismatch, or an invalid stored record fail closed **before** provider dispatch. A known Host version outside rc.8 is rejected. When the Host exposes no version value, capability probing may allow the call but reports `hostConfirmed: false` and a compatibility warning; unknown is never presented as tested rc.8.
+
+The plugin waits for official `storageDomain` through Cordis child-context injection, so bundle order does not decide whether the service starts. Withdrawing the service removes `auxiliaryRuntime`, cancels active work, and permanently disposes stale service references; restoring it creates a fresh runtime.
 
 ## Compatibility
 

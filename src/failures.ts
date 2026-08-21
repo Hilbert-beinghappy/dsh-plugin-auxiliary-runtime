@@ -36,6 +36,7 @@ export function categoryForCode(code: string): FailureCategory {
     || code === 'CALL_NOT_FOUND'
     || code === 'INTERRUPTED'
     || code === 'PROJECTION_UNAVAILABLE'
+    || code === 'REQUEST_BUILD_FAILED'
   ) return 'unavailable'
   return 'error'
 }

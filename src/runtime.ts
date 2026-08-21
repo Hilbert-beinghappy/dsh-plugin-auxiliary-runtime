@@ -29,7 +29,12 @@ import type {
   AuxiliaryCallResult,
   AuxiliaryCancelResult,
   AuxiliaryCapability,
+  AuxiliaryBuiltRequest,
   AuxiliaryPolicy,
+  AuxiliaryPrepareRequest,
+  AuxiliaryPreparedRequest,
+  AuxiliaryPreparedView,
+  AuxiliaryRequestBuilder,
   AuxiliaryRunRequest,
   AuxiliarySnapshot,
   CallRecord,
@@ -63,12 +68,16 @@ export class AuxiliaryRuntime {
   private readonly reservations = new Map<string, HeldReservation>()
   private admission: Promise<void> = Promise.resolve()
   private generation = 0
+  private disposed = false
 
   constructor(private readonly ctx: HostContext) {}
 
   start(): Promise<void> {
+    if (this.disposed) return this.stopPromise ?? Promise.resolve()
     if (this.stopPromise !== undefined) return this.stopPromise
-    this.startPromise ??= this.openDomain(this.generation)
+    this.startPromise ??= this.openDomain(this.generation).finally(() => {
+      if (!this.domainOpen && this.stopPromise === undefined) this.startPromise = undefined
+    })
     return this.startPromise
   }
 
@@ -86,8 +95,14 @@ export class AuxiliaryRuntime {
     return stopping
   }
 
+  /** Permanently retire one plugin-fiber instance; stale Host references can never restart it. */
+  dispose(): Promise<void> {
+    this.disposed = true
+    return this.stop()
+  }
+
   async run(request: AuxiliaryRunRequest): Promise<AuxiliaryCallResult> {
-    if (this.stopPromise !== undefined) return this.rejectStopped(request)
+    if (this.disposed || this.stopPromise !== undefined) return this.rejectStopped(request)
     await this.start()
     let validated: ValidatedRun
     try {
@@ -299,7 +314,8 @@ export class AuxiliaryRuntime {
       return { kind: 'result', result: this.failed(request, factFromCode('SESSION_NOT_FOUND')) }
     }
 
-    const limit = this.preflight(session, request)
+    const limit = this.preflightBase(session)
+      ?? (request.reservation === undefined ? undefined : this.preflightTokens(session, request.reservation))
     if (limit !== undefined) {
       return { kind: 'result', result: this.failed(request, limit) }
     }
@@ -321,11 +337,7 @@ export class AuxiliaryRuntime {
     } catch (error) {
       return { kind: 'result', result: this.failed(request, mapStorageFailure(error).toFact()) }
     }
-    this.reservations.set(request.callId, {
-      sessionId: session.id,
-      sessionCreatedAt: session.header.createdAt,
-      reservation: request.reservation,
-    })
+    if (request.reservation !== undefined) this.holdReservation(request.callId, session, request.reservation)
     return { kind: 'admitted', row, session }
   }
 
@@ -368,7 +380,101 @@ export class AuxiliaryRuntime {
           usageRecorded,
         })
       }
-      const options = streamOptions(prepared.config, request, session, controller.signal)
+      let system = request.system
+      let messages = request.messages
+      let preparedReservation: UsageBuckets | undefined
+      if (request.buildRequest !== undefined) {
+        let value: unknown
+        try {
+          value = request.buildRequest(cloneConfig(prepared.config))
+        } catch {
+          return await this.terminalize(row, {
+            status: 'failed',
+            failure: factFromCode('REQUEST_BUILD_FAILED'),
+            usage,
+            usageRecorded,
+          })
+        }
+        try {
+          const built = validateBuiltRequest(value)
+          system = built.system
+          messages = built.messages
+        } catch (error) {
+          return await this.terminalize(row, {
+            status: 'failed',
+            failure: error instanceof AuxiliaryRuntimeError ? error.toFact() : factFromUnknown(error),
+            usage,
+            usageRecorded,
+          })
+        }
+      }
+      if (request.prepareRequest !== undefined) {
+        let value: unknown
+        try {
+          value = request.prepareRequest(preparedView(prepared))
+        } catch {
+          return await this.terminalize(row, {
+            status: 'failed',
+            failure: factFromCode('REQUEST_BUILD_FAILED'),
+            usage,
+            usageRecorded,
+          })
+        }
+        try {
+          const built = validatePreparedRequest(value)
+          system = built.system
+          messages = built.messages
+          preparedReservation = built.reservation
+        } catch (error) {
+          return await this.terminalize(row, {
+            status: 'failed',
+            failure: error instanceof AuxiliaryRuntimeError ? error.toFact() : factFromUnknown(error),
+            usage,
+            usageRecorded,
+          })
+        }
+      }
+      if (messages === undefined) {
+        return await this.terminalize(row, {
+          status: 'failed',
+          failure: factFromCode('INVALID_REQUEST'),
+          usage,
+          usageRecorded,
+        })
+      }
+      if (controller.signal.aborted) {
+        return await this.terminalize(row, {
+          status: 'cancelled',
+          failure: factFromCode(ABORTED_CODE),
+          usage,
+          usageRecorded,
+        })
+      }
+      if (preparedReservation !== undefined) {
+        const held = await this.withAdmission(async () => {
+          if (controller.signal.aborted || this.stopPromise !== undefined || this.disposed) {
+            return factFromCode(ABORTED_CODE)
+          }
+          const live = this.requireSession(row.sessionId, false)
+          if (live === undefined || live.header.createdAt !== row.sessionCreatedAt) {
+            return factFromCode('SESSION_NOT_FOUND')
+          }
+          const blocked = this.preflightTokens(live, preparedReservation)
+          if (blocked !== undefined) return blocked
+          this.holdReservation(row.callId, live, preparedReservation)
+          return undefined
+        })
+        if (held !== undefined) {
+          const cancelled = held.code === ABORTED_CODE
+          return await this.terminalize(row, {
+            status: cancelled ? 'cancelled' : 'failed',
+            failure: held,
+            usage,
+            usageRecorded,
+          })
+        }
+      }
+      const options = streamOptions(prepared.config, { ...request, system, messages }, session, controller.signal)
       let finish: FinishReason | undefined
       for await (const chunk of prepared.stream(options)) {
         if (chunk.type === 'text-delta') {
@@ -495,7 +601,7 @@ export class AuxiliaryRuntime {
     return resultOf(existing, true)
   }
 
-  private preflight(session: SessionLike, request: ValidatedRun): FailureFact | undefined {
+  private preflightBase(session: SessionLike): FailureFact | undefined {
     const store = this.store
     if (store === undefined) return factFromCode('DOMAIN_UNAVAILABLE')
     if (store.rowCount() >= MAX_CALL_ROWS) return factFromCode('ROW_LIMIT')
@@ -508,15 +614,31 @@ export class AuxiliaryRuntime {
     if (aggregate.callCount >= policy.maxCallsPerSession) {
       return factFromCode('MAX_CALLS_PER_SESSION')
     }
+    return undefined
+  }
+
+  private preflightTokens(session: SessionLike, reservation: UsageBuckets): FailureFact | undefined {
+    const store = this.store
+    if (store === undefined) return factFromCode('DOMAIN_UNAVAILABLE')
+    const policy = store.getPolicy(session.id, session.header.createdAt)
+    const aggregate = store.aggregate(session.id, session.header.createdAt)
     const reserved = heldReservationTotal(
       this.reservations.values(),
       session.id,
       session.header.createdAt,
     )
-    if (totalTokens(aggregate.usage) + reserved + totalTokens(request.reservation) > policy.maxAuxiliaryTotalTokens) {
+    if (totalTokens(aggregate.usage) + reserved + totalTokens(reservation) > policy.maxAuxiliaryTotalTokens) {
       return factFromCode('MAX_AUXILIARY_TOTAL_TOKENS')
     }
     return undefined
+  }
+
+  private holdReservation(callId: string, session: SessionLike, reservation: UsageBuckets): void {
+    this.reservations.set(callId, {
+      sessionId: session.id,
+      sessionCreatedAt: session.header.createdAt,
+      reservation,
+    })
   }
 
   private dispatchGate(): FailureFact | undefined {
@@ -637,8 +759,10 @@ interface ValidatedRun {
   readonly purpose: AuxiliaryRunRequest['purpose']
   readonly config: LlmCallConfig
   readonly system?: string
-  readonly messages: readonly Message[]
-  readonly reservation: UsageBuckets
+  readonly messages?: readonly Message[]
+  readonly buildRequest?: AuxiliaryRequestBuilder
+  readonly prepareRequest?: AuxiliaryPrepareRequest
+  readonly reservation?: UsageBuckets
   readonly signal?: AbortSignal
 }
 
@@ -655,14 +779,32 @@ function validateRunRequest(request: AuxiliaryRunRequest): ValidatedRun {
   if (request.config === undefined || typeof request.config.provider !== 'string' || typeof request.config.model !== 'string') {
     throw new AuxiliaryRuntimeError('INVALID_REQUEST', 'config.provider and config.model are required')
   }
-  if (!Array.isArray(request.messages)) {
+  const hasBuilder = request.buildRequest !== undefined
+  const hasPreparedBuilder = request.prepareRequest !== undefined
+  const hasStatic = request.messages !== undefined || request.system !== undefined
+  if (Number(hasBuilder) + Number(hasPreparedBuilder) + Number(hasStatic) !== 1) {
+    throw new AuxiliaryRuntimeError(
+      'INVALID_REQUEST',
+      'static messages, buildRequest, and prepareRequest are mutually exclusive',
+    )
+  }
+  if (hasBuilder && typeof request.buildRequest !== 'function') {
+    throw new AuxiliaryRuntimeError('INVALID_REQUEST', 'buildRequest must be a function')
+  }
+  if (hasPreparedBuilder && typeof request.prepareRequest !== 'function') {
+    throw new AuxiliaryRuntimeError('INVALID_REQUEST', 'prepareRequest must be a function')
+  }
+  if (hasStatic && !Array.isArray(request.messages)) {
     throw new AuxiliaryRuntimeError('INVALID_REQUEST', 'messages must be an array')
   }
-  if (request.reservation === undefined) {
+  if (!hasPreparedBuilder && request.reservation === undefined) {
     throw new AuxiliaryRuntimeError('RESERVATION_REQUIRED', 'a mandatory usage reservation is required')
   }
-  const reservation = reservationSchema.safeParse(request.reservation)
-  if (!reservation.success) {
+  if (hasPreparedBuilder && request.reservation !== undefined) {
+    throw new AuxiliaryRuntimeError('INVALID_REQUEST', 'prepareRequest owns its reservation')
+  }
+  const reservation = request.reservation === undefined ? undefined : reservationSchema.safeParse(request.reservation)
+  if (reservation !== undefined && !reservation.success) {
     throw new AuxiliaryRuntimeError('INVALID_REQUEST', 'reservation must be four non-negative integer buckets')
   }
   return {
@@ -671,10 +813,85 @@ function validateRunRequest(request: AuxiliaryRunRequest): ValidatedRun {
     purpose: request.purpose,
     config: cloneConfig(request.config),
     ...request.system === undefined ? {} : { system: request.system },
-    messages: request.messages,
-    reservation: reservation.data,
+    ...request.messages === undefined ? {} : { messages: request.messages },
+    ...request.buildRequest === undefined ? {} : { buildRequest: request.buildRequest },
+    ...request.prepareRequest === undefined ? {} : { prepareRequest: request.prepareRequest },
+    ...reservation === undefined ? {} : { reservation: reservation.data },
     ...request.signal === undefined ? {} : { signal: request.signal },
   }
+}
+
+function preparedView(prepared: {
+  readonly config: LlmCallConfig
+  readonly context?: { readonly contextWindow: number }
+  readonly adapterDefaults?: { readonly reasoningEffort?: true; readonly maxTokens?: true }
+}): AuxiliaryPreparedView {
+  const view: AuxiliaryPreparedView = {
+    config: Object.freeze(cloneConfig(prepared.config)),
+    ...prepared.context === undefined ? {} : {
+      context: Object.freeze({ contextWindow: prepared.context.contextWindow }),
+    },
+    adapterDefaults: Object.freeze({
+      ...prepared.adapterDefaults?.reasoningEffort === true ? { reasoningEffort: true as const } : {},
+      ...prepared.adapterDefaults?.maxTokens === true ? { maxTokens: true as const } : {},
+    }),
+  }
+  return Object.freeze(view)
+}
+
+function validatePreparedRequest(value: unknown): AuxiliaryPreparedRequest {
+  const built = validateBuiltRequest(value, true)
+  const reservation = value !== null && typeof value === 'object'
+    ? reservationSchema.safeParse((value as Record<string, unknown>).reservation)
+    : undefined
+  if (reservation === undefined || !reservation.success) {
+    throw new AuxiliaryRuntimeError('INVALID_REQUEST', 'prepareRequest must return a four-bucket reservation')
+  }
+  return { ...built, reservation: reservation.data }
+}
+
+function validateBuiltRequest(value: unknown, allowReservation = false): AuxiliaryBuiltRequest {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new AuxiliaryRuntimeError('INVALID_REQUEST', 'buildRequest must return { messages }')
+  }
+  const record = value as Record<string, unknown>
+  for (const key of Object.keys(record)) {
+    if (key !== 'system' && key !== 'messages' && !(allowReservation && key === 'reservation')) {
+      throw new AuxiliaryRuntimeError('INVALID_REQUEST', 'buildRequest result may only include system and messages')
+    }
+  }
+  if (!Array.isArray(record.messages)) {
+    throw new AuxiliaryRuntimeError('INVALID_REQUEST', 'messages must be an array')
+  }
+  if (record.system !== undefined && typeof record.system !== 'string') {
+    throw new AuxiliaryRuntimeError('INVALID_REQUEST', 'system must be a string')
+  }
+  for (const [index, message] of record.messages.entries()) {
+    if (!isOfficialMessage(message)) {
+      throw new AuxiliaryRuntimeError('INVALID_REQUEST', `messages[${index}] is not a valid official message`)
+    }
+  }
+  return {
+    ...record.system === undefined ? {} : { system: record.system },
+    messages: record.messages as Message[],
+  }
+}
+
+function isOfficialMessage(value: unknown): value is Message {
+  if (value === null || typeof value !== 'object') return false
+  const record = value as { id?: unknown; role?: unknown; content?: unknown; source?: unknown }
+  return typeof record.id === 'string'
+    && record.id.length > 0
+    && (record.role === 'system' || record.role === 'user' || record.role === 'assistant')
+    && Array.isArray(record.content)
+    && record.content.every((block) => (
+      block !== null
+      && typeof block === 'object'
+      && typeof (block as { type?: unknown }).type === 'string'
+    ))
+    && record.source !== null
+    && typeof record.source === 'object'
+    && typeof (record.source as { kind?: unknown }).kind === 'string'
 }
 
 function cloneConfig(config: LlmCallConfig): LlmCallConfig {
@@ -690,7 +907,7 @@ function cloneConfig(config: LlmCallConfig): LlmCallConfig {
 
 function streamOptions(
   config: LlmCallConfig,
-  request: ValidatedRun,
+  request: Pick<ValidatedRun, 'purpose' | 'system'> & { readonly messages: readonly Message[] },
   session: SessionLike,
   signal: AbortSignal,
 ): GenerateOptions {

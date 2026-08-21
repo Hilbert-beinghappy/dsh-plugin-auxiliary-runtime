@@ -1,8 +1,57 @@
 import { describe, expect, it } from 'vitest'
 import { MAX_CALL_ROWS } from '../src/constants.ts'
+import type { AuxiliaryRunRequest, Message } from '../src/types.ts'
 import { createHarness, deferred, tokenUsage, usageChunks, waitUntil } from './helpers/harness.ts'
 
+function dynamicRequest(callId: string, reservationTokens: number): AuxiliaryRunRequest {
+  return {
+    callId,
+    sessionId: 'session-1',
+    purpose: 'clarify',
+    config: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    prepareRequest: () => ({
+      messages: [{
+        id: `message-${callId}`,
+        role: 'user',
+        content: [{ type: 'text', text: callId }],
+        source: { kind: 'plugin' },
+      }] satisfies Message[],
+      reservation: {
+        uncachedInputTokens: reservationTokens,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+    }),
+  }
+}
+
 describe('limits, reservations, and concurrency', () => {
+  it('serializes prepared token admission so only one concurrent reservation fits', async () => {
+    const harness = createHarness()
+    await harness.runtime.setPolicy('session-1', {
+      maxConcurrentCalls: 4,
+      maxCallsPerSession: 8,
+      maxAuxiliaryTotalTokens: 15,
+    })
+    const streamGate = deferred()
+    harness.setChunks(async function* () {
+      await streamGate.promise
+      yield* usageChunks(tokenUsage(1, 1))
+    })
+
+    const first = harness.runtime.run(dynamicRequest('dynamic-1', 10))
+    await waitUntil(() => harness.streamCalls === 1)
+    const second = await harness.runtime.run(dynamicRequest('dynamic-2', 10))
+    expect(second.failure).toEqual({ category: 'limit', code: 'MAX_AUXILIARY_TOTAL_TOKENS' })
+    expect(harness.prepareCalls).toBe(2)
+    expect(harness.streamCalls).toBe(1)
+    expect(harness.calls.get('dynamic-2')?.status).toBe('failed')
+
+    streamGate.resolve()
+    await first
+  })
+
   it('rejects concurrent calls, recorded call count, and reserved totals', async () => {
     const harness = createHarness()
     await harness.runtime.setPolicy('session-1', {

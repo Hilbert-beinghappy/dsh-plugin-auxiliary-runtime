@@ -3,6 +3,7 @@ import { apply } from '../src/index.ts'
 import {
   auxiliaryRuntimeTypertContribution,
   REMOTE_NAMESPACE,
+  RUNTIME_READY_INJECT,
   SERVICE_KEY,
   TYPERT_REMOTE_METHODS,
 } from '../src/index.ts'
@@ -37,10 +38,11 @@ describe('plugin and Typert Host surface', () => {
   it('provides a same-process host and a separate narrow Typert object', async () => {
     const harness = createHarness()
     const injected: string[] = []
+    const callbacks: Promise<void>[] = []
     let disposer: (() => unknown) | undefined
     harness.host.inject = (deps, callback) => {
       injected.push(...(deps as string[]))
-      callback(harness.host)
+      callbacks.push(Promise.resolve(callback(harness.host)))
     }
     harness.host.effect = (factory) => {
       const cleanup = factory()
@@ -48,7 +50,9 @@ describe('plugin and Typert Host surface', () => {
     }
 
     expect(apply(harness.host)).toBeUndefined()
-    expect(injected).toEqual(['typert', 'typertGateway'])
+    await Promise.all(callbacks)
+    expect([...RUNTIME_READY_INJECT]).toEqual(['storageDomain'])
+    expect(injected).toEqual(['storageDomain', 'typert', 'typertGateway'])
 
     const processHost = harness.provided.get(SERVICE_KEY) as AuxiliaryRuntimeHost
     const remote = harness.provided.get(REMOTE_NAMESPACE) as AuxiliaryRuntimeRemote

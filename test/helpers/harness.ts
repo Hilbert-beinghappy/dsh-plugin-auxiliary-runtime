@@ -221,6 +221,8 @@ export function createHarness(options: HarnessOptions = {}): TestHarness {
         }
         const prepared: PreparedLlmCall = {
           config,
+          context: { contextWindow: 64_000 },
+          adapterDefaults: {},
           stream(streamOptions) {
             events.push('stream')
             streamCalls += 1
@@ -243,6 +245,14 @@ export function createHarness(options: HarnessOptions = {}): TestHarness {
     }
   }
 
+  const originalPut = calls.put.bind(calls)
+  calls.put = async (key, value) => {
+    if (value.status === 'running' && !calls.map.has(key)) {
+      events.push('persist')
+    }
+    return originalPut(key, value)
+  }
+
   const addSession = (sessionId: string, createdAt = 1_700_000_000_000): SessionLike => {
     const session: SessionLike = {
       id: sessionId,
@@ -253,21 +263,23 @@ export function createHarness(options: HarnessOptions = {}): TestHarness {
     return session
   }
 
-  const request = (overrides: Partial<AuxiliaryRunRequest> = {}): AuxiliaryRunRequest => ({
-    callId: 'call-1',
-    sessionId: 'session-1',
-    purpose: 'clarify',
-    config: defaultConfig,
-    system: 'system text',
-    messages: [{
-      id: 'message-test' as Message['id'],
-      role: 'user',
-      content: [{ type: 'text', text: 'hello' }],
-      source: { kind: 'user' },
-    }],
-    reservation: defaultReservation,
-    ...overrides,
-  })
+  const request = (overrides: Partial<AuxiliaryRunRequest> = {}): AuxiliaryRunRequest => {
+    return {
+      callId: 'call-1',
+      sessionId: 'session-1',
+      purpose: 'clarify',
+      config: defaultConfig,
+      system: 'system text',
+      messages: [{
+        id: 'message-test' as Message['id'],
+        role: 'user',
+        content: [{ type: 'text', text: 'hello' }],
+        source: { kind: 'user' },
+      }],
+      reservation: defaultReservation,
+      ...overrides,
+    } as AuxiliaryRunRequest
+  }
 
   const reopen = (): AuxiliaryRuntime => new AuxiliaryRuntime(host)
 

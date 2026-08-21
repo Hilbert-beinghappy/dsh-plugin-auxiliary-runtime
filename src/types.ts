@@ -108,6 +108,11 @@ export interface GenerateOptions extends LlmCallConfig {
 
 export interface PreparedLlmCall {
   readonly config: LlmCallConfig
+  readonly context?: { readonly contextWindow: number }
+  readonly adapterDefaults?: {
+    readonly reasoningEffort?: true
+    readonly maxTokens?: true
+  }
   stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 }
 
@@ -180,7 +185,10 @@ export interface TypertLike {
 export interface HostContext {
   get?(name: string, strict?: boolean): unknown
   provide?(name: string, value: unknown): unknown
-  inject?(deps: readonly string[] | Record<string, unknown>, callback: (ctx: HostContext) => void): unknown
+  inject?(
+    deps: readonly string[] | Record<string, unknown>,
+    callback: (ctx: HostContext) => void | Promise<void>,
+  ): unknown
   effect?(factory: () => void | (() => void) | Promise<void> | (() => Promise<void>)): void
   storageDomain?: StorageDomainService
   sessions?: SessionsService
@@ -190,16 +198,59 @@ export interface HostContext {
   dshVersion?: string
 }
 
-export interface AuxiliaryRunRequest {
+export interface AuxiliaryBuiltRequest {
+  readonly system?: string
+  readonly messages: readonly Message[]
+}
+
+export type AuxiliaryRequestBuilder = (preparedConfig: LlmCallConfig) => AuxiliaryBuiltRequest
+
+export interface AuxiliaryPreparedView {
+  readonly config: Readonly<LlmCallConfig>
+  readonly context?: { readonly contextWindow: number }
+  readonly adapterDefaults: {
+    readonly reasoningEffort?: true
+    readonly maxTokens?: true
+  }
+}
+
+export interface AuxiliaryPreparedRequest extends AuxiliaryBuiltRequest {
+  readonly reservation: UsageBuckets
+}
+
+export type AuxiliaryPrepareRequest = (prepared: AuxiliaryPreparedView) => AuxiliaryPreparedRequest
+
+interface AuxiliaryRunRequestBase {
   readonly callId: string
   readonly sessionId: string
   readonly purpose: AuxiliaryPurpose
   readonly config: LlmCallConfig
-  readonly system?: string
-  readonly messages: readonly Message[]
-  readonly reservation: UsageBuckets
   readonly signal?: AbortSignal
 }
+
+export type AuxiliaryRunRequest = AuxiliaryRunRequestBase & (
+  | {
+      readonly system?: string
+      readonly messages: readonly Message[]
+      readonly buildRequest?: never
+      readonly prepareRequest?: never
+      readonly reservation: UsageBuckets
+    }
+  | {
+      readonly system?: never
+      readonly messages?: never
+      readonly buildRequest: AuxiliaryRequestBuilder
+      readonly prepareRequest?: never
+      readonly reservation: UsageBuckets
+    }
+  | {
+      readonly system?: never
+      readonly messages?: never
+      readonly buildRequest?: never
+      readonly prepareRequest: AuxiliaryPrepareRequest
+      readonly reservation?: never
+    }
+)
 
 export interface AuxiliaryCallResult {
   readonly callId: string

@@ -24,6 +24,7 @@ describe('privacy schema rejection', () => {
       { prompt: 'secret prompt' },
       { messages: [{ role: 'user', content: 'hi' }] },
       { system: 'system text' },
+      { buildRequest: () => ({ messages: [] }) },
       { output: 'model output' },
       { cwd: '/tmp/project' },
       { path: '/Users/name/.dsh' },
