@@ -22,6 +22,7 @@ try {
     /^package\/package\.json$/,
     /^package\/LICENSE$/,
     /^package\/README\.md$/,
+    /^package\/README\.zh\.md$/,
     /^package\/cordis\.patch\.yml$/,
     /^package\/lib\/.+\.js$/,
     /^package\/lib\/.+\.d\.ts$/,
