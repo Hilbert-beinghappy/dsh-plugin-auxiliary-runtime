@@ -5,8 +5,9 @@
 <p>Cancelable auxiliary model calls, durable limits, and provenance-preserving usage for DeepSeek Harness.</p>
 
 <p>
-  <a href="https://github.com/Hilbert-beinghappy/dsh-plugin-auxiliary-runtime/releases/tag/v0.1.0"><img src="https://img.shields.io/badge/Version-0.1.0-orange" alt="Version 0.1.0"></a>
-  <img src="https://img.shields.io/badge/DeepSeek%20Harness-0.1.0--rc.8-5B5BD6" alt="DeepSeek Harness 0.1.0-rc.8">
+  <a href="https://github.com/Hilbert-beinghappy/dsh-plugin-auxiliary-runtime/releases"><img src="https://img.shields.io/badge/Version-0.1.1-orange" alt="Version 0.1.1"></a>
+  <img src="https://img.shields.io/badge/DeepSeek%20Harness-0.1.1--rc.2-5B5BD6" alt="DeepSeek Harness 0.1.1-rc.2">
+  <img src="https://img.shields.io/badge/Host%20still%20supported-0.1.0--rc.8-0A7EA4" alt="Host 0.1.0-rc.8 still supported">
   <img src="https://img.shields.io/badge/Usage-Official%20%7C%20Auxiliary%20%7C%20Combined-0A7EA4" alt="Official, Auxiliary, Combined usage">
   <a href="https://github.com/Hilbert-beinghappy/dsh-plugin-auxiliary-runtime/actions/workflows/ci.yml"><img src="https://github.com/Hilbert-beinghappy/dsh-plugin-auxiliary-runtime/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow" alt="MIT License"></a>
@@ -34,7 +35,7 @@
 
 ## Project overview
 
-`dsh-plugin-auxiliary-runtime@0.1.0` is a community Host plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It binds cancelable, no-tools auxiliary model calls to an already-live Session, applies per-Session policy, and records usage in a dedicated ledger backed by the official `storageDomain` service.
+`dsh-plugin-auxiliary-runtime@0.1.1` is a community Host plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It binds cancelable, no-tools auxiliary model calls to an already-live Session, applies per-Session policy, and records usage in a dedicated ledger backed by the official `storageDomain` service. The current compile and metadata target is official Host `0.1.1-rc.2`; exact Host `0.1.0-rc.8` remains supported.
 
 [Clarify](https://github.com/Hilbert-beinghappy/dsh-plugin-clarify) uses Auxiliary Runtime's same-process `run` service to generate contextual questions, options, and evolving Draft previews outside the main Session transcript. [SeekTTY](https://github.com/Hilbert-beinghappy/seektty) consumes the read-only snapshot and shows Official, Auxiliary, and Combined values in `/status` while the capability is healthy.
 
@@ -115,14 +116,22 @@ The plugin waits for official `storageDomain` through Cordis child-context injec
 
 ## Quick start
 
-Install the prebuilt GitHub Release tarball into an isolated Profile with the native `dsh plugin` command:
+The last published Release remains Auxiliary Runtime `0.1.0`. Install that prebuilt tarball into an isolated Profile with the native `dsh plugin` command:
 
 ```sh
 pnpm add --global @deepseek-ai/dsh@0.1.0-rc.8
 dsh plugin --profile tui add https://github.com/Hilbert-beinghappy/dsh-plugin-auxiliary-runtime/releases/download/v0.1.0/dsh-plugin-auxiliary-runtime-0.1.0.tgz
 ```
 
-For the complete clarification workflow, add SeekTTY and Clarify to the same Profile:
+Source `0.1.1` targets official Host `0.1.1-rc.2` and is not a GitHub Release yet. Do not invent a `v0.1.1` download URL. Pack the local tree and add that tarball:
+
+```sh
+pnpm add --global @deepseek-ai/dsh@0.1.1-rc.2
+pnpm pack
+dsh plugin --profile tui add ./dsh-plugin-auxiliary-runtime-0.1.1.tgz
+```
+
+Host `0.1.0-rc.8` still admits this candidate tarball when you pack it locally. Current sibling Releases SeekTTY `1.2.0` and Clarify `0.2.1` remain the last published jointly accepted trio on exact Host `0.1.0-rc.8`. They are not a `0.1.1-rc.2` claim. Unpublished Auxiliary `0.1.1` with SeekTTY `1.2.1` and Clarify `0.2.2` has Lane A no-key PTY evidence and 2026-08-22 Lane B live-provider observations on `candidate4`. Not a Release or complete joint acceptance. See [Compatibility and verification](#compatibility-and-verification). You can still add those published tarballs beside this candidate:
 
 ```sh
 dsh plugin --profile tui add https://github.com/Hilbert-beinghappy/seektty/releases/download/v1.2.0/seektty-1.2.0.tgz
@@ -170,7 +179,7 @@ Model execution remains a same-process capability; HTTP consumers receive usage 
 
 ## Compatibility and verification
 
-The published compatibility target is official DeepSeek Harness **`0.1.0-rc.8`** with Node `^22.19.0 || >=24`. Runtime integration uses these public Host services:
+The current compile and metadata target is official DeepSeek Harness **`0.1.1-rc.2`** with Node `^22.19.0 || >=24`. Exact Host **`0.1.0-rc.8`** remains supported. Runtime integration uses these public Host services:
 
 - `storageDomain.open` / `KvTable`
 - `sessions.get` and `header.createdAt`
@@ -178,11 +187,13 @@ The published compatibility target is official DeepSeek Harness **`0.1.0-rc.8`**
 - `sessionProjections.snapshot` for read-only Official usage
 - Typert Host `register` for snapshot and cancel
 
-The recommended installation combines SeekTTY `1.2.0`, Clarify `0.2.1`, and Auxiliary Runtime `0.1.0` on exact rc.8. Clarify `0.2.1` preserves the six-method Remote, `clarify.wire/1`, and compatibility boundary of `0.2.0`.
+The published rollback joint baseline remains exact Host **`0.1.0-rc.8`**. Auxiliary Runtime `0.1.1` compiles against and admits exact `0.1.1-rc.2`. Lane A (2026-08-21, unmodified stock `0.1.1-rc.2`, isolated `DSH_HOME`, real PTY, unpublished Auxiliary `0.1.1` + Clarify `0.2.2` + SeekTTY `1.2.1`): `/doctor` 0 error / 0 warning, 99 plugins running; `/status` healthy; `/clarify` routed through Auxiliary, returned `MISSING_CREDENTIAL` without a key, and kept the composer; Vision-Exp was visible and selectable; a PNG attachment restored after `/restart`. Missing-source restore: unit tests keep the failure copy to a basename, cover both notice orders, and keep absolute paths out of the text; a real-PTY hardcopy/visible scan found only the ASCII basename `vision-logo.png` and none of `private/tmp`, `/tmp`, `Users`, or `Volumes`. That does not prove the restore error stayed visible after dismissing the no-key onboarding modal (Esc also clears notices). Lane B (2026-08-22, unmodified stock `0.1.1-rc.2`, isolated `DSH_HOME`, `candidate4`): Vision-Exp was selected explicitly; a PNG image-only send succeeded, cleared attachments on send, and recognized the logo, but the image-only prompt with no question led the model to call `read_image` again; a real JFIF JPEG queued through SeekTTY was converted by the official Host to a PNG variant as usual, then OCR succeeded without tools; Clarify via Auxiliary completed 6 dynamic rounds, a 41-line full review, and a second-confirm accept back into the composer without auto-send; `/status` showed Official, Auxiliary, and Combined usage; an 895-file scan found 0 secret literals. This is not a Release or complete joint acceptance. It does not prove Web UI, GIF/WebP, over-limit rejection, JPEG original-byte passthrough, PNG without any tool use, this-round interruption recovery, or a cost/cache A/B. Clarify `0.2.1` preserves the six-method Remote, `clarify.wire/1`, and compatibility boundary of `0.2.0`.
 
-Clarify `0.2.0` live-provider joint acceptance covered model-generated clarification, multi-round Draft evolution, user-controlled submission, interruption recovery, usage provenance, and ledger privacy. Clarify `0.2.1` post-release no-key acceptance re-downloaded and verified all three Release assets, passed stock add/boot/remove/re-add and `/doctor` with 0 errors, 0 warnings, and 99 plugins, then reached `running`, routed through Auxiliary, and returned the expected isolated-environment `MISSING_CREDENTIAL` result. Version `0.2.1` has not rerun live-provider multi-round acceptance or a cache/cost A/B; Clarify `0.2.0` remains an available rollback artifact.
+Clarify `0.2.0` live-provider joint acceptance covered model-generated clarification, multi-round Draft evolution, user-controlled submission, interruption recovery, usage provenance, and ledger privacy. Clarify `0.2.1` post-release no-key acceptance re-downloaded and verified all three Release assets, passed stock add/boot/remove/re-add and `/doctor` with 0 errors, 0 warnings, and 99 plugins on exact `0.1.0-rc.8`, then reached `running`, routed through Auxiliary, and returned the expected isolated-environment `MISSING_CREDENTIAL` result. Version `0.2.1` has not rerun live-provider multi-round acceptance or a cache/cost A/B.
 
-`package.json#dshPlugin.testedHost` records this project's tested target. Capability probing can boot when the Host exposes no version value and reports `hostConfirmed: false`; a known version outside rc.8 is rejected.
+The published rollback stack is official `@deepseek-ai/dsh@0.1.0-rc.8`, Auxiliary Runtime `0.1.0`, Clarify `0.2.1`, and SeekTTY `1.2.0`.
+
+`package.json#dshPlugin.testedHost` is the compile pin `0.1.1-rc.2`. `dshPlugin.testedHosts` lists the two exact admission pins `0.1.0-rc.8` and `0.1.1-rc.2`. Capability probing can boot when the Host exposes no version value and reports `hostConfirmed: false`; a known version outside those two pins is rejected.
 
 ## Development
 
@@ -194,7 +205,9 @@ pnpm build
 pnpm pack:check
 ```
 
-Release assets contain the tarball and `SHA256SUMS`.
+`pnpm typecheck` is the official type gate. The official-contract runtime test only pins installed package versions; the compile-time `Assert` aliases in that file are checked by `pnpm typecheck`.
+
+When a GitHub Release is published, assets include the tarball and `SHA256SUMS`.
 
 ## License
 

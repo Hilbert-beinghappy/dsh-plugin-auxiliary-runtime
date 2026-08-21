@@ -24,15 +24,43 @@ describe('capability and fail-closed Host seams', () => {
     expect(harness.calls.size).toBe(0)
   })
 
-  it('fails closed on a host version outside the pinned rc.8 range', async () => {
+  it('fails closed on a host version outside the pinned rc.8 and 0.1.1-rc.2 range', async () => {
     const harness = createHarness({ dshVersion: '0.1.0-rc.7' })
     const result = await harness.runtime.run(harness.request())
     expect(result.failure).toEqual({ category: 'unavailable', code: 'HOST_UNSUPPORTED' })
     expect(harness.prepareCalls).toBe(0)
     const capability = (await harness.runtime.snapshot('session-1')).capability
     expect(capability.ok).toBe(false)
-    expect(capability.pinnedHostRange).toEqual(['0.1.0-rc.8'])
+    expect(capability.pinnedHostRange).toEqual(['0.1.0-rc.8', '0.1.1-rc.2'])
     expect(capability.singleProcess).toBe(true)
+  })
+
+  it('does not admit exact 0.1.1-rc.1 after the compile pin moved to rc.2', async () => {
+    const harness = createHarness({ dshVersion: '0.1.1-rc.1' })
+    const result = await harness.runtime.run(harness.request())
+    expect(result.failure).toEqual({ category: 'unavailable', code: 'HOST_UNSUPPORTED' })
+    expect(harness.prepareCalls).toBe(0)
+    const capability = (await harness.runtime.snapshot('session-1')).capability
+    expect(capability.ok).toBe(false)
+    expect(capability.hostVersion).toBe('0.1.1-rc.1')
+    expect(capability.hostConfirmed).toBe(false)
+  })
+
+  it('admits exact 0.1.1-rc.2 without changing the four-bucket official read', async () => {
+    const harness = createHarness({ dshVersion: '0.1.1-rc.2' })
+    const result = await harness.runtime.run(harness.request())
+    expect(result.status).toBe('succeeded')
+    const snapshot = await harness.runtime.snapshot('session-1')
+    expect(snapshot.capability.ok).toBe(true)
+    expect(snapshot.capability.hostVersion).toBe('0.1.1-rc.2')
+    expect(snapshot.capability.hostConfirmed).toBe(true)
+    expect(snapshot.capability.officialProjection).toBe(true)
+    expect(snapshot.official).toEqual({
+      uncachedInputTokens: 1,
+      outputTokens: 2,
+      cacheReadTokens: 3,
+      cacheWriteTokens: 4,
+    })
   })
 
   it('fails closed on domain version mismatch without dispatch', async () => {

@@ -5,8 +5,9 @@
 <p>为 DeepSeek Harness 提供可取消的辅助模型调用、持久限额和来源清晰的用量账本。</p>
 
 <p>
-  <a href="https://github.com/Hilbert-beinghappy/dsh-plugin-auxiliary-runtime/releases/tag/v0.1.0"><img src="https://img.shields.io/badge/Version-0.1.0-orange" alt="Version 0.1.0"></a>
-  <img src="https://img.shields.io/badge/DeepSeek%20Harness-0.1.0--rc.8-5B5BD6" alt="DeepSeek Harness 0.1.0-rc.8">
+  <a href="https://github.com/Hilbert-beinghappy/dsh-plugin-auxiliary-runtime/releases"><img src="https://img.shields.io/badge/Version-0.1.1-orange" alt="Version 0.1.1"></a>
+  <img src="https://img.shields.io/badge/DeepSeek%20Harness-0.1.1--rc.2-5B5BD6" alt="DeepSeek Harness 0.1.1-rc.2">
+  <img src="https://img.shields.io/badge/Host%20still%20supported-0.1.0--rc.8-0A7EA4" alt="仍支持 Host 0.1.0-rc.8">
   <img src="https://img.shields.io/badge/Usage-Official%20%7C%20Auxiliary%20%7C%20Combined-0A7EA4" alt="Official, Auxiliary, Combined usage">
   <a href="https://github.com/Hilbert-beinghappy/dsh-plugin-auxiliary-runtime/actions/workflows/ci.yml"><img src="https://github.com/Hilbert-beinghappy/dsh-plugin-auxiliary-runtime/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow" alt="MIT License"></a>
@@ -34,7 +35,7 @@
 
 ## 项目概览
 
-`dsh-plugin-auxiliary-runtime@0.1.0` 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的社区 Host 插件。它把可取消、无工具的辅助模型调用绑定到已有 Session，执行每个 Session 的用量策略，并通过官方 `storageDomain` 将用量写入独立账本。
+`dsh-plugin-auxiliary-runtime@0.1.1` 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的社区 Host 插件。它把可取消、无工具的辅助模型调用绑定到已有 Session，执行每个 Session 的用量策略，并通过官方 `storageDomain` 将用量写入独立账本。当前编译与元数据目标是官方 Host `0.1.1-rc.2`；精确 Host `0.1.0-rc.8` 仍受支持。
 
 [Clarify](https://github.com/Hilbert-beinghappy/dsh-plugin-clarify) 使用同进程 `run` 服务，在主 Session transcript 之外生成上下文问题、选项和持续演进的 Draft preview。[SeekTTY](https://github.com/Hilbert-beinghappy/seektty) 读取快照，并在能力健康时通过 `/status` 展示 Official、Auxiliary 和 Combined。
 
@@ -115,14 +116,22 @@
 
 ## 快速开始
 
-使用官方 `dsh plugin` 把预构建 GitHub Release tarball 安装进隔离 Profile：
+最近一次已发布 Release 仍是 Auxiliary Runtime `0.1.0`。用官方 `dsh plugin` 把该预构建 tarball 装进隔离 Profile：
 
 ```sh
 pnpm add --global @deepseek-ai/dsh@0.1.0-rc.8
 dsh plugin --profile tui add https://github.com/Hilbert-beinghappy/dsh-plugin-auxiliary-runtime/releases/download/v0.1.0/dsh-plugin-auxiliary-runtime-0.1.0.tgz
 ```
 
-体验完整澄清工作流时，把 SeekTTY 和 Clarify 加入同一 Profile：
+当前源码 `0.1.1` 面向官方 Host `0.1.1-rc.2`，尚无 GitHub Release。不要编造 `v0.1.1` 下载 URL。请本地打包后再 add：
+
+```sh
+pnpm add --global @deepseek-ai/dsh@0.1.1-rc.2
+pnpm pack
+dsh plugin --profile tui add ./dsh-plugin-auxiliary-runtime-0.1.1.tgz
+```
+
+Host `0.1.0-rc.8` 仍接纳这份本地打出的候选 tarball。当前兄弟 Release SeekTTY `1.2.0` 与 Clarify `0.2.1` 仍是精确 Host `0.1.0-rc.8` 上最近一次已发布联合验收组合。这不是它们已在 `0.1.1-rc.2` 上的声明。未发布 Auxiliary `0.1.1` 与 SeekTTY `1.2.1`、Clarify `0.2.2` 已有 Lane A 无 key PTY 证据，以及 2026-08-22 在 `candidate4` 上的 Lane B live-provider 观察。不是 Release，也不是完整联合验收。详见 [兼容与验证](#兼容与验证)。仍可将这些已发布 tarball 与本候选一起 add：
 
 ```sh
 dsh plugin --profile tui add https://github.com/Hilbert-beinghappy/seektty/releases/download/v1.2.0/seektty-1.2.0.tgz
@@ -170,7 +179,7 @@ prepared 回调在 `llm.prepareCall` 后接收已经分离、冻结的结构数�
 
 ## 兼容与验证
 
-公开兼容目标是官方 DeepSeek Harness **`0.1.0-rc.8`**，Node `^22.19.0 || >=24`。运行时使用以下公开 Host 服务：
+当前编译与元数据目标是官方 DeepSeek Harness **`0.1.1-rc.2`**，Node `^22.19.0 || >=24`。精确 Host **`0.1.0-rc.8`** 仍受支持。运行时使用以下公开 Host 服务：
 
 - `storageDomain.open` / `KvTable`
 - `sessions.get` 与 `header.createdAt`
@@ -178,11 +187,13 @@ prepared 回调在 `llm.prepareCall` 后接收已经分离、冻结的结构数�
 - `sessionProjections.snapshot`，只读 Official 用量
 - Typert Host `register`，仅注册 snapshot 与 cancel
 
-当前推荐安装组合是精确 rc.8 上的 SeekTTY `1.2.0`、Clarify `0.2.1` 和 Auxiliary Runtime `0.1.0`。Clarify `0.2.1` 保持 `0.2.0` 的六方法 Remote、`clarify.wire/1` 和兼容边界。
+已发布回滚联合基线仍是精确 Host **`0.1.0-rc.8`**。Auxiliary Runtime `0.1.1` 针对并接纳精确 `0.1.1-rc.2`。Lane A（2026-08-21，未修改 stock `0.1.1-rc.2`、隔离 `DSH_HOME`、真实 PTY、未发布 Auxiliary `0.1.1` + Clarify `0.2.2` + SeekTTY `1.2.1`）：`/doctor` 0 error / 0 warning、99 plugins running；`/status` 健康；`/clarify` 路由到 Auxiliary 后无 key 返回 `MISSING_CREDENTIAL` 且保留 composer；Vision-Exp 可见且可选择；PNG 附件 `/restart` 成功恢复。丢失源文件恢复：单测保证失败文案只用 basename、覆盖两种通知顺序、绝对路径不进文案；真实 PTY hardcopy/可见区扫描只检出 ASCII basename `vision-logo.png`，未检出 `private/tmp`、`/tmp`、`Users`、`Volumes`。不能证明关闭无 key onboarding modal 后该 restore error 仍持续显示（Esc 也会清 notice）。Lane B（2026-08-22，未修改 stock `0.1.1-rc.2`、隔离 `DSH_HOME`、`candidate4`）：已显式选择 Vision-Exp；PNG image-only 发送成功、发送即清附件并识别 logo，但纯图无问题导致模型又调用 `read_image`；真实 JFIF JPEG 经 SeekTTY 入队、官方 Host 正常转 PNG variant 后，无工具 OCR 成功；Clarify 经 Auxiliary 完成 6 轮动态问答、41 行完整审阅、二次确认 accept 回 composer 且不自动发送；`/status` 显示官方／辅助／组合用量；895 文件扫描 secret literal 为 0。这不是 Release，也不是完整联合验收。未证明 Web UI、GIF/WebP、超限拒绝、JPEG 原字节直通、PNG 完全不靠工具、本轮中断恢复、成本／缓存 A/B。Clarify `0.2.1` 保持 `0.2.0` 的六方法 Remote、`clarify.wire/1` 和兼容边界。
 
-Clarify `0.2.0` live-provider 联合验收覆盖真实模型动态澄清、多轮 Draft 演进、用户自主发送、中断恢复、用量来源和账本隐私。Clarify `0.2.1` 发布后无 Key 验收重新下载并核对三包 Release 资产，在 stock rc.8 Profile 完成 add／boot／remove／re-add，`/doctor` 为 0 错误／0 警告、99 个插件运行，随后进入 `running`、路由到 Auxiliary，并按隔离环境预期返回 `MISSING_CREDENTIAL`。`0.2.1` 尚未重跑 live-provider 动态多轮，也没有 cache／cost A/B；Clarify `0.2.0` 保留为已发布回滚工件。
+Clarify `0.2.0` live-provider 联合验收覆盖真实模型动态澄清、多轮 Draft 演进、用户自主发送、中断恢复、用量来源和账本隐私。Clarify `0.2.1` 发布后无 Key 验收重新下载并核对三包 Release 资产，在精确 `0.1.0-rc.8` 的 stock Profile 完成 add／boot／remove／re-add，`/doctor` 为 0 错误／0 警告、99 个插件运行，随后进入 `running`、路由到 Auxiliary，并按隔离环境预期返回 `MISSING_CREDENTIAL`。`0.2.1` 尚未重跑 live-provider 动态多轮，也没有 cache／cost A/B。
 
-`package.json#dshPlugin.testedHost` 记录本项目的已测目标。Host 没有暴露版本值时，能力探测可以启动并报告 `hostConfirmed: false`；已知版本位于 rc.8 之外时会被拒绝。
+已发布回滚栈是官方 `@deepseek-ai/dsh@0.1.0-rc.8`、Auxiliary Runtime `0.1.0`、Clarify `0.2.1` 和 SeekTTY `1.2.0`。
+
+`package.json#dshPlugin.testedHost` 是编译钉 `0.1.1-rc.2`。`dshPlugin.testedHosts` 列出两个精确准入钉 `0.1.0-rc.8` 与 `0.1.1-rc.2`。Host 没有暴露版本值时，能力探测可以启动并报告 `hostConfirmed: false`；已知版本位于这两个钉之外时会被拒绝。
 
 ## 开发
 
@@ -194,7 +205,9 @@ pnpm build
 pnpm pack:check
 ```
 
-Release 资产包含 tarball 与 `SHA256SUMS`。
+`pnpm typecheck` 是官方类型门。official-contract 的运行时测试只钉住所安装包版本；该文件顶部的编译期 `Assert` 由 `pnpm typecheck` 检查。
+
+未来 GitHub Release 才会附带 tarball 与 `SHA256SUMS`。
 
 ## 许可
 
