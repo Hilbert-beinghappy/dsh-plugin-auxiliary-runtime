@@ -1,0 +1,10 @@
+node_modules/
+lib/
+coverage/
+*.tgz
+*.log
+.DS_Store
+._*
+.env
+.probe-work/
+.test-home/
